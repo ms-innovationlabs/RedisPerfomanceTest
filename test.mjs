@@ -6,12 +6,11 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// Конфигурация AES-256-CBC
-const algorithm = "aes-256-cbc";
-const key = crypto.randomBytes(32); // 256 бит ключа
-const iv = crypto.randomBytes(16); // Вектор инициализации
 
-// Функция шифрования для генерации 64-символьного хэша
+const algorithm = "aes-256-cbc";
+const key = crypto.randomBytes(32);
+const iv = crypto.randomBytes(16);
+
 function encrypt(text) {
   const cipher = crypto.createCipheriv(algorithm, key, iv);
   let encrypted = cipher.update(text, "utf8", "hex");
@@ -23,9 +22,8 @@ const client = createClient({
   url: process.env.REDIS_URL,
 });
 
-let savedUsers = []; // Сохраняем всех пользователей при генерации данных
+let savedUsers = []; 
 
-// Функция для создания данных и записи их в Redis
 async function createData() {
   const createOrganizationCount =  process.env.ORGANIZATIOS_COUNT || 10;
   try {
@@ -37,19 +35,16 @@ async function createData() {
         encrypt(`user_${i}_${j}`)
       );
 
-      // Запись в test_kv (userID → orgID)
       if (process.env.TEST_KV === "true") {
         for (const userId of users) {
           await client.set(`test_kv:${userId}`, orgId);
         }
       }
 
-      // Всегда сохраняем пользователей для тестирования
       for (const userId of users) {
         savedUsers.push({ userId, orgId });
       }
 
-      // Запись в test_json (orgID → массив userID)
       if (process.env.TEST_JSON === "true") {
         await client.json.set(`test_json:${orgId}`, "$", users);
       }
@@ -67,7 +62,6 @@ async function createData() {
   }
 }
 
-// Функция для замера времени выполнения запроса
 async function measureExecutionTime(queryFunction, ...args) {
   const start = performance.now();
   const result = await queryFunction(...args);
@@ -77,19 +71,16 @@ async function measureExecutionTime(queryFunction, ...args) {
   return { result, time };
 }
 
-// Запрос для проверки в `test_kv` (userID → orgID)
 async function checkTestKV(userId, expectedOrgId) {
   const orgId = await client.get(`test_kv:${userId}`);
   return orgId === expectedOrgId;
 }
 
-// Запрос для проверки в `test_json` (orgID → [userID, userID, ...])
 async function checkTestJSON(orgId, userId) {
   const index = await client.json.arrIndex(`test_json:${orgId}`, "$", userId);
   return index !== -1;
 }
 
-// Функция для тестирования времени ответа Redis
 async function testRedis() {
   let totalTimeKv = 0;
   let totalTimeJson = 0;
@@ -102,7 +93,6 @@ async function testRedis() {
         savedUsers[Math.floor(Math.random() * savedUsers.length)];
       const { userId, orgId } = randomUser;
 
-      // Замер времени для `test_kv`
       if (process.env.TEST_KV === "true") {
 
         const { time: timeKv } = await measureExecutionTime(
@@ -113,7 +103,6 @@ async function testRedis() {
         totalTimeKv += timeKv;
       }
 
-      // Замер времени для `test_json`
       if (process.env.TEST_JSON === "true") {
         const { time: timeJson } = await measureExecutionTime(
           checkTestJSON,
@@ -124,16 +113,15 @@ async function testRedis() {
       }
     }
 
-    // Рассчитываем среднее время запроса
     if (process.env.TEST_KV === "true") {
-      const avgTimeKv = totalTimeKv / 1000;
+      const avgTimeKv = totalTimeKv / process.env.TESTS_COUNT;
       console.log(
         `Average time for test_kv (Plain Key-Value): ${avgTimeKv.toFixed(5)} ms`
       );
     }
 
     if (process.env.TEST_JSON === "true") {
-      const avgTimeJson = totalTimeJson / 1000;
+      const avgTimeJson = totalTimeJson / process.env.TESTS_COUNT;
       console.log(
         `Average time for test_json (ARRINDEX in JSON array): ${avgTimeJson.toFixed(5)} ms`
       );
@@ -147,7 +135,6 @@ async function testRedis() {
   }
 }
 
-// Запуск создания данных и последующего тестирования
 (async () => {
   await createData();
   await testRedis();
